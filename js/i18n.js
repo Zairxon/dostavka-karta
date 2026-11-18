@@ -204,6 +204,9 @@ const S = {
   region_khorezm: ['Хорезмская область', 'Xorazm viloyati', 'Khorezm region'],
   region_kk: ['Каракалпакстан', "Qoraqalpog'iston", 'Karakalpakstan'],
   go_region: ['Перейти к региону', "Hududga o'tish", 'Go to region'],
+  as_user: ['Вы вошли как', 'Siz quyidagi sifatida kirdingiz', 'Signed in as'],
+  back_admin: ['Вернуться', 'Qaytish', 'Go back'],
+  switch_user: ['Войти как сотрудник', 'Xodim sifatida kirish', 'Sign in as an employee'],
   need_coords: ['Укажите точку на карте', 'Nuqtani xaritada belgilang', 'Pick the point on the map'],
 };
 

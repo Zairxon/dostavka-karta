@@ -16,7 +16,7 @@ const ico = (cls, txt) => L.divIcon({ className: 'pin-wrap', html: `<div class="
 export const shopIcon = () => ico('shop', '●');
 export const whIcon = () => ico('wh', '▣');
 export const numIcon = (n, kind) => ico((kind || 'shop') + ' num', n);
-export const courierIcon = (ini, stale) => L.divIcon({ className: 'pin-wrap', html: `<div class="cour ${stale ? 'stale' : ''}">${ini}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] });
+export const courierIcon = (ini, stale, role) => L.divIcon({ className: 'pin-wrap', html: `<div class="cour ${role === 'agent' ? 'agent' : ''} ${stale ? 'stale' : ''}">${ini}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] });
 export const meIcon = () => L.divIcon({ className: 'pin-wrap', html: '<div class="me"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
 
 export function fitTo(m, latlngs) {

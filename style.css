@@ -105,3 +105,4 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 .kpi{background:#fff;border-radius:14px;padding:12px;box-shadow:var(--shadow)}.kpi b{display:block;font-size:26px;color:var(--pri)}.kpi span{font-size:13px;color:var(--mut)}
 .kpi.ok b{color:#15803d}.kpi.warn b{color:#b45309}
 .card h3{font-size:16px}
+.cour.agent{background:#7c3aed}.cour.stale{background:#8a98b3}.d.agt{background:#7c3aed}.upd.as{background:#e8e0ff;border-color:#c9b9ff}

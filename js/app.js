@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.1.1';
+export const VERSION = '1.2.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -56,6 +56,7 @@ function logoSvg() {
 }
 async function doLogout(silent) {
   if (!silent) { try { await rpc('dl_logout', {}); } catch {} }
+  try { localStorage.removeItem('dl_admin_token'); } catch {}
   session.set(''); S.me = null; S.d = null; stopGeo(); clearInterval(S.poll);
   loginView();
 }
@@ -126,7 +127,7 @@ async function boot() {
   S.tab = tabsFor()[0].k;
   shell();
   clearInterval(S.poll); S.poll = setInterval(() => { if (!document.hidden) refresh(); }, S.me.role === 'admin' ? 6000 : 9000);
-  if (S.me.role === 'courier') startGeo();
+  if (S.me.role !== 'admin' && !impersonating()) startGeo();
 }
 const tabsFor = () => ({
   admin: [{ k: 'map', i: '◎', l: 'tab_map' }, { k: 'orders', i: '▤', l: 'tab_orders' }, { k: 'stock', i: '▣', l: 'tab_stock' }, { k: 'people', i: '☺', l: 'tab_people' }, { k: 'more', i: '≡', l: 'tab_more' }],
@@ -136,11 +137,13 @@ const tabsFor = () => ({
 
 function shell() {
   root.innerHTML = `<header class="top"><div class="ttl">${esc(t('app_name'))}</div><div class="who"><b>${esc(S.me.name || S.me.login)}</b><span>${esc(t('role_' + S.me.role))}</span></div></header>
+    ${impersonating() ? `<div class="upd as"><span>${esc(t('as_user'))}: <b>${esc(S.me.name || S.me.login)}</b> (${esc(t('role_' + S.me.role))})</span><button class="btn sm" id="backadm">${esc(t('back_admin'))}</button></div>` : ''}
     <div id="upd" class="upd" hidden><span>${esc(t('update_avail'))}</span><button class="btn sm" id="updb">${esc(t('update_btn'))}</button></div>
     <main id="main"></main>
     <nav class="tabs">${tabsFor().map(x => `<button data-tab="${x.k}"><i>${x.i}</i><span>${esc(t(x.l))}</span><em class="bd" hidden></em></button>`).join('')}</nav>`;
   root.querySelector('.tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
   $('#updb').onclick = applyUpdate;
+  const ba = $('#backadm'); if (ba) ba.onclick = backToAdmin;
   go(S.tab); badge();
   checkUpdate();
 }
@@ -151,6 +154,23 @@ function go(tab) {
   const main = $('#main'); main.innerHTML = ''; main.scrollTop = 0;
   const v = { map: mapView, orders: ordersView, stock: stockView, people: peopleView, more: moreView, route: routeView, report: reportView }[tab];
   S.view = v(main) || null;
+}
+
+// ================= вход под сотрудником (админ) =================
+async function switchTo(uid) {
+  const r = await safe('dl_impersonate', { p_user: uid }); if (!r.ok) return;
+  try { if (!localStorage.getItem('dl_admin_token')) localStorage.setItem('dl_admin_token', session.token); } catch {}
+  await reenter(r.v.token);
+}
+async function backToAdmin() {
+  let at = ''; try { at = localStorage.getItem('dl_admin_token') || ''; localStorage.removeItem('dl_admin_token'); } catch {}
+  if (!at) return;
+  try { await rpc('dl_logout', {}); } catch {}
+  await reenter(at);
+}
+async function reenter(token) {
+  stopGeo(); clearInterval(S.poll); S.cleanup && S.cleanup(); S.cleanup = null; S.view = null; seen = null;
+  session.set(token); await boot();
 }
 
 // ================= обновление приложения =================
@@ -170,6 +190,7 @@ async function applyUpdate() {
 
 // ================= геолокация доставщика =================
 let geoId = null, lastSent = null, lastSentAt = 0;
+const impersonating = () => { try { return !!localStorage.getItem('dl_admin_token'); } catch { return false; } };
 function startGeo() {
   if (!navigator.geolocation || geoId != null) return;
   geoId = navigator.geolocation.watchPosition(p => {
@@ -191,7 +212,7 @@ function mapView(main) {
     <div class="mapbar">${role === 'admin' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button><button class="btn sm alt" data-add="warehouse">＋ ${esc(t('warehouse'))}</button>` : role === 'agent' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>` : `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>`}
     <button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="srch">🔍</button><button class="btn sm ghost" id="regb">⌖</button></div>
     <div class="banner" id="banner" hidden><span>${esc(t('pick_on_map'))}</span><button class="btn sm ghost" id="pickx">${esc(t('pick_cancel'))}</button></div>
-    <div class="legend"><i class="d shop"></i>${esc(t('legend_shop'))} <i class="d wh"></i>${esc(t('legend_wh'))}${role === 'admin' ? ` <i class="d cour"></i>${esc(t('legend_courier'))}` : ''}</div></div>`;
+    <div class="legend"><i class="d shop"></i>${esc(t('legend_shop'))} <i class="d wh"></i>${esc(t('legend_wh'))}${role === 'admin' ? ` <i class="d cour"></i>${esc(t('legend_courier'))} <i class="d agt"></i>${esc(t('role_agent'))}` : ''}</div></div>`;
   const m = M.makeMap($('#map', main)); let fitted = false, picking = null;
   S.cleanup = () => m.map.remove();
   const draw = () => {
@@ -206,7 +227,7 @@ function mapView(main) {
     if (role === 'admin') for (const c of S.d.locations) {
       const u = U[c.id]; if (!u) continue;
       const age = (Date.now() - new Date(c.ts).getTime()) / 60000;
-      const mk = M.marker([c.lat, c.lng], M.courierIcon(esc(initials(u.name || u.login)), age > 10)).addTo(m.g.couriers);
+      const mk = M.marker([c.lat, c.lng], M.courierIcon(esc(initials(u.name || u.login)), age > 10, u.role)).addTo(m.g.couriers);
       mk.on('click', () => courierSheet(c, u));
       mk.bindTooltip(esc(u.name || u.login), { direction: 'top', offset: [0, -16] });
       ll.push([c.lat, c.lng]);
@@ -267,7 +288,7 @@ function searchPoints(points) {
 function courierSheet(c, u) {
   const age = Math.round((Date.now() - new Date(c.ts).getTime()) / 60000);
   const mine = S.d.orders.filter(o => o.courier_id === u.id && ['assigned', 'picked'].includes(o.status));
-  sheet(`<h3>${esc(u.name || u.login)}</h3><p class="mut">${esc(t('role_courier'))} · ${age < 1 ? esc(t('just_now')) : esc(t('ago_min', { m: age }))}</p>
+  sheet(`<h3>${esc(u.name || u.login)}</h3><p class="mut">${esc(t('role_' + u.role))} · ${age < 1 ? esc(t('just_now')) : esc(t('ago_min', { m: age }))}</p>
     <p>${telLink(u.phone)}</p>
     ${mine.length ? mine.map(o => `<div class="mini">${esc(t('order_no'))}${o.no} · ${esc(P[o.shop_id]?.name || '')} <span class="chip s-${o.status}">${esc(t('status_' + o.status))}</span></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}
     <div class="row end"><button class="btn ghost" data-x>${esc(t('ok'))}</button></div>`);
@@ -475,7 +496,7 @@ function peopleView(main) {
 // ================= ещё =================
 function moreView(main) {
   main.innerHTML = `<div class="page"><div class="card"><b>${esc(S.me.name || S.me.login)}</b><div class="mut sm">${esc(t('role_' + S.me.role))} · ${esc(S.me.login)}</div></div>
-    ${S.me.role === 'admin' ? `<button class="btn alt wide" id="rep" style="margin:0 0 10px">${esc(t('report'))}</button>` : ''}
+    ${S.me.role === 'admin' ? `<button class="btn alt wide" id="rep" style="margin:0 0 10px">${esc(t('report'))}</button><button class="btn ghost wide" id="swt" style="margin:0 0 10px">${esc(t('switch_user'))}</button>` : ''}
     <div class="card"><label class="fl" style="margin-top:0"><span>${esc(t('language'))}</span>${selectHtml('lng', LANGS, getLang())}</label>
     <label class="fl"><span>${esc(t('region'))}</span>${selectHtml('reg', regionOpts(), M.getRegion())}</label>
     <button class="btn ghost wide" id="ntf">${esc(t('notif_enable'))}</button><small class="mut">${esc(t('notif_hint'))}</small>
@@ -484,6 +505,11 @@ function moreView(main) {
     <button class="btn danger wide" id="out">${esc(t('sign_out'))}</button></div>`;
   bindSelects(main, (id, v) => { if (id === 'reg') { M.setRegion(v); toast(t('saved')); return; } setLang(v); shell(); go('more'); });
   const rp = $('#rep', main); if (rp) rp.onclick = () => go('report');
+  const sw = $('#swt', main); if (sw) sw.onclick = async () => {
+    const us = S.d.users.filter(u => u.active !== false && u.id !== S.me.id);
+    const id = await pickDlg(t('switch_user'), us.map(u => ({ v: u.id, l: u.name || u.login, sub: t('role_' + u.role) })));
+    if (id) switchTo(id);
+  };
   $('#ntf', main).onclick = async () => {
     if (!('Notification' in window)) return toast(t('notif_denied'), 'err');
     const r = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();

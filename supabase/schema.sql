@@ -461,3 +461,25 @@ begin
   return r;
 end $$;
 grant execute on function dl_report(text,int) to anon, authenticated;
+
+-- v1.2.0: агент тоже передаёт положение; админ может войти под сотрудником без пароля
+create or replace function dl_location(p_token text, p_lat double precision, p_lng double precision) returns void
+language plpgsql security definer set search_path = public as $$
+declare u dl_users;
+begin
+  u := dl_need(p_token, array['courier','agent']);
+  insert into dl_locations(user_id,lat,lng,ts) values (u.id,p_lat,p_lng,now())
+    on conflict (user_id) do update set lat=excluded.lat, lng=excluded.lng, ts=now();
+end $$;
+create or replace function dl_impersonate(p_token text, p_user uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare t text; u dl_users;
+begin
+  perform dl_need(p_token, array['admin']);
+  select * into u from dl_users where id = p_user and active;
+  if u.id is null then raise exception 'not_found'; end if;
+  t := encode(gen_random_bytes(24), 'hex');
+  insert into dl_sessions(token, user_id, expires_at) values (t, u.id, now() + interval '12 hours');
+  return jsonb_build_object('token', t, 'role', u.role, 'id', u.id, 'name', u.name);
+end $$;
+grant execute on function dl_impersonate(text,uuid) to anon, authenticated;
