@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -242,6 +242,7 @@ function mapView(main) {
   };
   function startPick(kind) { picking = kind; $('#banner', main).hidden = false; $('#map', main).classList.add('pick'); m.map.on('click', onTap); }
   $('#pickx', main).onclick = stopPick;
+  if (S.autoPick) { const k = S.autoPick; S.autoPick = null; startPick(k); }
   return { update() { draw(); } };
 }
 
@@ -398,13 +399,13 @@ function stockView(main) {
     if (!wh || !P[wh]) wh = whs[0]?.id || null;
     let body = '';
     if (seg === 'stock') {
-      if (!whs.length) body = `<p class="empty">${esc(t('no_wh'))}</p>`;
+      if (!whs.length) body = `<p class="empty">${esc(t('no_wh'))}</p><button class="btn wide" id="addwh">＋ ${esc(t('add_wh'))}</button>`;
       else {
         const rows = S.d.products.map(p => { const s = S.d.stock.find(x => x.w === wh && x.p === p.id); return { p, q: s ? s.q : 0 }; });
-        body = `<div class="fl">${selectHtml('whsel', whs.map(w => ({ v: w.id, l: w.name })), wh)}</div>
+        body = `<div class="fl" style="margin-top:0">${selectHtml('whsel', whs.map(w => ({ v: w.id, l: w.name })), wh)}</div>
           <div class="cards">${rows.length ? rows.map(r => `<div class="card"><div class="ch"><b>${esc(r.p.name)}</b><span class="qty">${num(r.q)} ${esc(unitL(r.p.unit))}</span></div>
             <div class="acts"><button class="btn sm" data-in="${r.p.id}">＋ ${esc(t('receive'))}</button><button class="btn sm ghost" data-out="${r.p.id}">− ${esc(t('writeoff'))}</button></div></div>`).join('') : `<p class="empty">${esc(t('no_products'))}</p>`}</div>
-          <button class="btn ghost wide" id="hist">${esc(t('moves'))}</button>`;
+          <button class="btn ghost wide" id="hist">${esc(t('moves'))}</button><button class="btn alt wide" id="addwh">＋ ${esc(t('add_wh'))}</button>`;
       }
     } else {
       body = `<div class="cards">${S.d.products.length ? S.d.products.map(p => `<div class="card click" data-prod="${p.id}"><div class="ch"><b>${esc(p.name)}</b><span class="mut">${esc(unitL(p.unit))}</span></div><div class="mut sm">${esc(t('cap_per_unit'))}: ${num(p.cap)}</div></div>`).join('') : `<p class="empty">${esc(t('nothing'))}</p>`}</div>
@@ -416,6 +417,7 @@ function stockView(main) {
     main.querySelectorAll('[data-in]').forEach(b => b.onclick = () => moveStock(b.dataset.in, 1));
     main.querySelectorAll('[data-out]').forEach(b => b.onclick = () => moveStock(b.dataset.out, -1));
     const h = $('#hist', main); if (h) h.onclick = () => history();
+    const aw = $('#addwh', main); if (aw) aw.onclick = () => { S.autoPick = 'warehouse'; go('map'); };
     const ap = $('#addp', main); if (ap) ap.onclick = () => editProduct(null);
     main.querySelectorAll('[data-prod]').forEach(c => c.onclick = () => editProduct(c.dataset.prod));
   };
