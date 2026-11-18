@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -66,11 +66,54 @@ function index(d) {
   PR = Object.fromEntries(d.products.map(p => [p.id, p]));
   U = Object.fromEntries(d.users.map(u => [u.id, u]));
 }
+// ----- уведомления о заказах -----
+let seen = null;
+function beep() {
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(.18, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .5); o.start(); o.stop(c.currentTime + .5);
+    setTimeout(() => c.close(), 700);
+  } catch {}
+}
+function notify(msg) {
+  toast(msg); beep();
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(t('app_name'), { body: msg, icon: 'icon.svg' }); } catch {}
+  try { navigator.vibrate && navigator.vibrate(200); } catch {}
+}
+function detect(d) {
+  const next = new Map(d.orders.map(o => [o.id, o]));
+  if (seen) {
+    const role = d.me.role;
+    for (const o of d.orders) {
+      const old = seen.get(o.id), shop = (d.points.find(p => p.id === o.shop_id) || {}).name || '';
+      const vars = { n: o.no, shop };
+      if (!old) {
+        if (role === 'admin' && o.agent_id !== d.me.id) notify(t('notif_new_order', vars));
+        else if (role === 'courier') notify(t('notif_assigned', vars));
+        continue;
+      }
+      if (role === 'courier' && old.status !== o.status && o.status === 'cancelled') notify(t('notif_cancelled', vars));
+      if (role === 'agent' && old.status !== o.status) {
+        if (o.status === 'delivered') notify(t('notif_delivered', vars));
+        if (o.status === 'cancelled') notify(t('notif_cancelled', vars));
+      }
+      if (role === 'admin' && old.status !== o.status && o.status === 'delivered') notify(t('notif_delivered', vars));
+    }
+    if (role === 'courier') for (const [id, o] of seen) if (!next.has(id) && o.status === 'assigned') notify(t('notif_unassigned', { n: o.no }));
+  }
+  seen = next;
+}
+function badge() {
+  const b = root.querySelector('[data-tab="orders"] .bd'); if (!b) return;
+  const n = S.me.role === 'admin' ? S.d.orders.filter(o => o.status === 'new').length : 0;
+  b.textContent = n; b.hidden = !n;
+}
 async function refresh() {
   if (!session.token) return;
   try {
     const d = await rpc('dl_snapshot', {});
-    S.d = d; S.me = d.me; index(d);
+    detect(d); S.d = d; S.me = d.me; index(d); badge();
     if (S.view && S.view.update) S.view.update();
   } catch (e) { if (e.code === 'auth') await doLogout(true); }
 }
@@ -78,7 +121,7 @@ async function boot() {
   if (!session.token) { loginView(); return; }
   try {
     const d = await rpc('dl_snapshot', {});
-    S.d = d; S.me = d.me; index(d);
+    seen = null; detect(d); S.d = d; S.me = d.me; index(d);
   } catch (e) { if (e.code === 'auth' || e.code === 'bad_login') { session.set(''); loginView(); } else { root.innerHTML = `<div class="login"><div class="login-card"><p>${esc(errText(e))}</p><button class="btn" onclick="location.reload()">${esc(t('update_btn'))}</button></div></div>`; } return; }
   S.tab = tabsFor()[0].k;
   shell();
@@ -95,18 +138,18 @@ function shell() {
   root.innerHTML = `<header class="top"><div class="ttl">${esc(t('app_name'))}</div><div class="who"><b>${esc(S.me.name || S.me.login)}</b><span>${esc(t('role_' + S.me.role))}</span></div></header>
     <div id="upd" class="upd" hidden><span>${esc(t('update_avail'))}</span><button class="btn sm" id="updb">${esc(t('update_btn'))}</button></div>
     <main id="main"></main>
-    <nav class="tabs">${tabsFor().map(x => `<button data-tab="${x.k}"><i>${x.i}</i><span>${esc(t(x.l))}</span></button>`).join('')}</nav>`;
+    <nav class="tabs">${tabsFor().map(x => `<button data-tab="${x.k}"><i>${x.i}</i><span>${esc(t(x.l))}</span><em class="bd" hidden></em></button>`).join('')}</nav>`;
   root.querySelector('.tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
   $('#updb').onclick = applyUpdate;
-  go(S.tab);
+  go(S.tab); badge();
   checkUpdate();
 }
 function go(tab) {
   S.tab = tab;
-  root.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  root.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === (tab === 'report' ? 'more' : tab)));
   S.cleanup && S.cleanup(); S.cleanup = null; S.view = null;
   const main = $('#main'); main.innerHTML = ''; main.scrollTop = 0;
-  const v = { map: mapView, orders: ordersView, stock: stockView, people: peopleView, more: moreView, route: routeView }[tab];
+  const v = { map: mapView, orders: ordersView, stock: stockView, people: peopleView, more: moreView, route: routeView, report: reportView }[tab];
   S.view = v(main) || null;
 }
 
@@ -146,7 +189,7 @@ function mapView(main) {
   const role = S.me.role;
   main.innerHTML = `<div class="mapbox"><div id="map"></div>
     <div class="mapbar">${role === 'admin' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button><button class="btn sm alt" data-add="warehouse">＋ ${esc(t('warehouse'))}</button>` : role === 'agent' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>` : `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>`}
-    <button class="btn sm ghost" id="locme">◉</button></div>
+    <button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="srch">🔍</button><button class="btn sm ghost" id="regb">⌖</button></div>
     <div class="banner" id="banner" hidden><span>${esc(t('pick_on_map'))}</span><button class="btn sm ghost" id="pickx">${esc(t('pick_cancel'))}</button></div>
     <div class="legend"><i class="d shop"></i>${esc(t('legend_shop'))} <i class="d wh"></i>${esc(t('legend_wh'))}${role === 'admin' ? ` <i class="d cour"></i>${esc(t('legend_courier'))}` : ''}</div></div>`;
   const m = M.makeMap($('#map', main)); let fitted = false, picking = null;
@@ -176,6 +219,14 @@ function mapView(main) {
     if (!navigator.geolocation) return toast(t('gps_off'), 'err');
     navigator.geolocation.getCurrentPosition(p => m.map.setView([p.coords.latitude, p.coords.longitude], 14), () => toast(t('gps_off'), 'err'), { enableHighAccuracy: true, timeout: 10000 });
   };
+  $('#srch', main).onclick = async () => {
+    const id = await searchPoints(S.d.points);
+    if (id) { const p = P[id]; m.map.setView([p.lat, p.lng], 15); pointSheet(id); }
+  };
+  $('#regb', main).onclick = async () => {
+    const r = await pickDlg(t('go_region'), regionOpts());
+    if (r) { M.setRegion(r); m.map.setView(M.REGIONS[r], 10); }
+  };
   const stopPick = () => { picking = null; $('#banner', main).hidden = true; m.g.temp.clearLayers(); m.map.off('click', onTap); $('#map', main).classList.remove('pick'); };
   const onTap = async e => {
     const kind = picking; stopPick();
@@ -192,6 +243,24 @@ function mapView(main) {
   function startPick(kind) { picking = kind; $('#banner', main).hidden = false; $('#map', main).classList.add('pick'); m.map.on('click', onTap); }
   $('#pickx', main).onclick = stopPick;
   return { update() { draw(); } };
+}
+
+const regionOpts = () => [{ v: 'khorezm', l: t('region_khorezm') }, { v: 'kk', l: t('region_kk') }];
+
+// Поиск точки по названию/адресу: окно с полем и списком результатов
+function searchPoints(points) {
+  return new Promise(res => {
+    const ov = sheet(`<h3>${esc(t('search'))}</h3><input id="sq" placeholder="${esc(t('search_ph'))}" autocomplete="off"><div class="opts" id="sres" style="margin-top:10px"></div>`);
+    const list = () => {
+      const q = $('#sq', ov).value.trim().toLowerCase();
+      const r = points.filter(p => !q || (p.name + ' ' + p.address).toLowerCase().includes(q)).slice(0, 40);
+      $('#sres', ov).innerHTML = r.length ? r.map(p => `<button class="opt" data-v="${p.id}">${esc(p.name)}<small>${esc(t(p.kind === 'warehouse' ? 'warehouse' : 'shop'))}${p.address ? ' · ' + esc(p.address) : ''}</small></button>`).join('') : `<p class="mut">${esc(t('search_none'))}</p>`;
+    };
+    list(); $('#sq', ov).addEventListener('input', list); setTimeout(() => $('#sq', ov).focus(), 250);
+    let done = false;
+    ov.addEventListener('click', e => { const b = e.target.closest('.opt'); if (b && !done) { done = true; ov.querySelector('[data-x]') ; ov.classList.remove('in'); setTimeout(() => ov.remove(), 200); res(b.dataset.v); } });
+    new MutationObserver((_, ob) => { if (!document.body.contains(ov)) { ob.disconnect(); if (!done) { done = true; res(null); } } }).observe(document.body, { childList: true });
+  });
 }
 
 function courierSheet(c, u) {
@@ -240,21 +309,28 @@ function pointSheet(id) {
 
 // ================= заказы =================
 function ordersView(main) {
-  let seg = 'active';
+  let seg = 'active', q = '';
+  const match = o => !q || (`${o.no} ${P[o.shop_id]?.name || ''} ${P[o.shop_id]?.address || ''} ${U[o.courier_id]?.name || ''} ${U[o.agent_id]?.name || ''}`).toLowerCase().includes(q);
+  const cardsHtml = () => {
+    const all = S.d.orders.filter(match);
+    const list = all.filter(o => seg === 'active' ? ['new', 'assigned', 'picked'].includes(o.status) : ['delivered', 'cancelled'].includes(o.status));
+    return list.length ? list.map(orderCard).join('') : `<p class="empty">${esc(t(q ? 'search_none' : 'nothing'))}</p>`;
+  };
+  const bindCards = () => main.querySelectorAll('[data-o]').forEach(c => c.onclick = () => orderSheet(c.dataset.o));
   const draw = () => {
     const all = S.d.orders;
     const act = all.filter(o => ['new', 'assigned', 'picked'].includes(o.status));
-    const done = all.filter(o => ['delivered', 'cancelled'].includes(o.status));
-    const list = seg === 'active' ? act : done;
     main.innerHTML = `<div class="page"><div class="bar"><div class="seg"><button data-s="active" class="${seg === 'active' ? 'on' : ''}">${esc(t('active'))} (${act.length})</button><button data-s="done" class="${seg === 'done' ? 'on' : ''}">${esc(t('done_recent'))}</button></div>
       ${S.me.role !== 'courier' ? `<button class="btn" id="newo">＋ ${esc(t('new_order'))}</button>` : ''}</div>
-      <div class="cards">${list.length ? list.map(orderCard).join('') : `<p class="empty">${esc(t('nothing'))}</p>`}</div></div>`;
+      <input id="oq" class="search" placeholder="🔍 ${esc(t('search_ph'))}" value="${esc(q)}" autocomplete="off">
+      <div class="cards" id="ocards">${cardsHtml()}</div></div>`;
     main.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { seg = b.dataset.s; draw(); });
     const nb = $('#newo', main); if (nb) nb.onclick = () => newOrderSheet();
-    main.querySelectorAll('[data-o]').forEach(c => c.onclick = () => orderSheet(c.dataset.o));
+    $('#oq', main).oninput = e => { q = e.target.value.trim().toLowerCase(); $('#ocards', main).innerHTML = cardsHtml(); bindCards(); };
+    bindCards();
   };
   draw();
-  return { update() { if (!overlayOpen()) draw(); } };
+  return { update() { if (overlayOpen()) return; if (document.activeElement === $('#oq', main)) { $('#ocards', main).innerHTML = cardsHtml(); bindCards(); } else draw(); } };
 }
 function orderCard(o) {
   const sh = P[o.shop_id];
@@ -397,16 +473,54 @@ function peopleView(main) {
 // ================= ещё =================
 function moreView(main) {
   main.innerHTML = `<div class="page"><div class="card"><b>${esc(S.me.name || S.me.login)}</b><div class="mut sm">${esc(t('role_' + S.me.role))} · ${esc(S.me.login)}</div></div>
-    <div class="card"><label class="fl"><span>${esc(t('language'))}</span>${selectHtml('lng', LANGS, getLang())}</label>
+    ${S.me.role === 'admin' ? `<button class="btn alt wide" id="rep" style="margin:0 0 10px">${esc(t('report'))}</button>` : ''}
+    <div class="card"><label class="fl" style="margin-top:0"><span>${esc(t('language'))}</span>${selectHtml('lng', LANGS, getLang())}</label>
+    <label class="fl"><span>${esc(t('region'))}</span>${selectHtml('reg', regionOpts(), M.getRegion())}</label>
+    <button class="btn ghost wide" id="ntf">${esc(t('notif_enable'))}</button><small class="mut">${esc(t('notif_hint'))}</small>
     <button class="btn ghost wide" id="chp">${esc(t('change_pass'))}</button></div>
     <div class="card"><div class="ch"><span>${esc(t('version'))}</span><b>${VERSION}</b></div></div>
     <button class="btn danger wide" id="out">${esc(t('sign_out'))}</button></div>`;
-  bindSelects(main, (id, v) => { setLang(v); shell(); go('more'); });
+  bindSelects(main, (id, v) => { if (id === 'reg') { M.setRegion(v); toast(t('saved')); return; } setLang(v); shell(); go('more'); });
+  const rp = $('#rep', main); if (rp) rp.onclick = () => go('report');
+  $('#ntf', main).onclick = async () => {
+    if (!('Notification' in window)) return toast(t('notif_denied'), 'err');
+    const r = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    toast(t(r === 'granted' ? 'notif_enabled' : 'notif_denied'), r === 'granted' ? 'ok' : 'err');
+    if (r === 'granted') { beep(); }
+  };
   $('#chp', main).onclick = async () => {
     const v = await formDlg(t('change_pass'), [{ k: 'o', label: t('old_pass'), type: 'pass', req: true }, { k: 'n', label: t('new_pass'), type: 'pass', req: true }]);
     if (v) await safe('dl_change_pass', { p_old: v.o, p_new: v.n }, t('pass_changed'));
   };
   $('#out', main).onclick = () => doLogout();
+}
+
+// ================= отчёты (админ) =================
+function reportView(main) {
+  let days = 1, data = null, my = 0;
+  const load = async () => {
+    const id = ++my; const r = await safe('dl_report', { p_days: days });
+    if (id !== my || !r.ok) return; data = r.v; draw();
+  };
+  const sumStock = () => {
+    const by = {};
+    for (const s of S.d.stock) (by[s.w] ||= []).push(s);
+    return S.d.points.filter(p => p.kind === 'warehouse').map(w => `<div class="mini"><span>${esc(w.name)}</span><b>${(by[w.id] || []).map(s => `${esc(prodL(s.p))}: ${num(s.q)}`).join(', ') || '—'}</b></div>`).join('');
+  };
+  const draw = () => {
+    const d = data;
+    main.innerHTML = `<div class="page"><div class="bar"><button class="btn sm ghost" id="back">← ${esc(t('tab_more'))}</button><div class="seg">${[[1, 'p_today'], [7, 'p_7'], [30, 'p_30']].map(([n, k]) => `<button data-d="${n}" class="${days === n ? 'on' : ''}">${esc(t(k))}</button>`).join('')}</div></div>
+      ${d ? `<div class="kpis"><div class="kpi"><b>${d.created}</b><span>${esc(t('r_created'))}</span></div><div class="kpi ok"><b>${d.delivered}</b><span>${esc(t('r_delivered'))}</span></div><div class="kpi"><b>${d.cancelled}</b><span>${esc(t('r_cancelled'))}</span></div><div class="kpi warn"><b>${d.open}</b><span>${esc(t('r_open'))}</span></div></div>
+      <div class="card"><h3>${esc(t('r_couriers'))}</h3>${d.couriers.length ? d.couriers.map(c => `<div class="mini"><span>${esc(c.name)}</span><b>${c.delivered} ${esc(t('r_orders_n'))} · ${num(c.units)}</b></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}</div>
+      <div class="card"><h3>${esc(t('r_agents'))}</h3>${d.agents.length ? d.agents.map(c => `<div class="mini"><span>${esc(c.name)}</span><b>${c.orders} / ${c.delivered}</b></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}</div>
+      <div class="card"><h3>${esc(t('r_products'))}</h3>${d.products.length ? d.products.map(x => `<div class="mini"><span>${esc(prodL(x.p))}</span><b>${num(x.q)} ${esc(unitL(PR[x.p]?.unit))}</b></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}</div>
+      <div class="card"><h3>${esc(t('r_shops'))}</h3>${d.shops.length ? d.shops.map(x => `<div class="mini"><span>${esc(P[x.id]?.name || '—')}</span><b>${x.n}</b></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}</div>
+      <div class="card"><h3>${esc(t('r_stock_total'))}</h3>${sumStock() || `<p class="mut">${esc(t('nothing'))}</p>`}</div>` : `<p class="empty">${esc(t('loading'))}</p>`}</div>`;
+    $('#back', main).onclick = () => go('more');
+    main.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { days = +b.dataset.d; data = null; draw(); load(); });
+  };
+  draw(); load();
+  return { update() { /* данные отчёта не мигают при опросе */ } };
 }
 
 // ================= маршрут доставщика =================

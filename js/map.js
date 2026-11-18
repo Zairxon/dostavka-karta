@@ -1,9 +1,11 @@
 // Карта на Leaflet (плитки OpenStreetMap), булавки и слои.
 const L = window.L;
-export const CENTER = [41.55, 60.63]; // Ургенч (Хорезм); Нукус — [42.46, 59.61]
+export const REGIONS = { khorezm: [41.55, 60.63], kk: [42.46, 59.61] }; // Ургенч, Нукус
+export const getRegion = () => { try { return localStorage.getItem('dl_region') || 'khorezm'; } catch { return 'khorezm'; } };
+export const setRegion = r => { try { localStorage.setItem('dl_region', r); } catch {} };
 
 export function makeMap(el) {
-  const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(CENTER, 9);
+  const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(REGIONS[getRegion()] || REGIONS.khorezm, 9);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
   L.control.zoom({ position: 'topright' }).addTo(map);
   const g = { points: L.layerGroup().addTo(map), couriers: L.layerGroup().addTo(map), route: L.layerGroup().addTo(map), temp: L.layerGroup().addTo(map) };

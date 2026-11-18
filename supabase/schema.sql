@@ -440,3 +440,24 @@ grant execute on function
   dl_mark_add(text,uuid,uuid), dl_mark_done(text,uuid,boolean), dl_mark_delete(text,uuid),
   dl_location(text,double precision,double precision)
   to anon, authenticated;
+
+-- v1.1.0: отчёты админа (см. миграцию dl_report)
+create or replace function dl_report(p_token text, p_days int) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_from timestamptz; r jsonb; d int := least(greatest(coalesce(p_days,1),1),366);
+begin
+  perform dl_need(p_token, array['admin']);
+  v_from := (date_trunc('day', now() at time zone 'Asia/Tashkent') - (d-1) * interval '1 day') at time zone 'Asia/Tashkent';
+  select jsonb_build_object(
+    'created',(select count(*) from dl_orders where created_at >= v_from),
+    'delivered',(select count(*) from dl_orders where status='delivered' and delivered_at >= v_from),
+    'cancelled',(select count(*) from dl_orders where status='cancelled' and created_at >= v_from),
+    'open',(select count(*) from dl_orders where status in ('new','assigned','picked')),
+    'couriers',coalesce((select jsonb_agg(x order by (x->>'delivered')::int desc) from (select jsonb_build_object('id',u.id,'name',u.name,'delivered',count(o.id),'units',coalesce((select sum(i.qty) from dl_order_items i where i.order_id = any(array_agg(o.id))),0)) x from dl_users u join dl_orders o on o.courier_id=u.id and o.status='delivered' and o.delivered_at >= v_from group by u.id,u.name) t),'[]'),
+    'agents',coalesce((select jsonb_agg(x order by (x->>'orders')::int desc) from (select jsonb_build_object('id',u.id,'name',u.name,'orders',count(o.id),'delivered',count(o.id) filter (where o.status='delivered')) x from dl_users u join dl_orders o on o.agent_id=u.id and o.created_at >= v_from group by u.id,u.name) t),'[]'),
+    'products',coalesce((select jsonb_agg(x order by (x->>'q')::numeric desc) from (select jsonb_build_object('p',i.product_id,'q',sum(i.qty)) x from dl_order_items i join dl_orders o on o.id=i.order_id where o.status='delivered' and o.delivered_at >= v_from group by i.product_id) t),'[]'),
+    'shops',coalesce((select jsonb_agg(x order by (x->>'n')::int desc) from (select jsonb_build_object('id',o.shop_id,'n',count(*)) x from dl_orders o where o.status='delivered' and o.delivered_at >= v_from group by o.shop_id limit 10) t),'[]')
+  ) into r;
+  return r;
+end $$;
+grant execute on function dl_report(text,int) to anon, authenticated;
