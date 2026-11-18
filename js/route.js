@@ -150,3 +150,17 @@ export function legTotals(seq, M) {
   for (const i of seq) { t += M.dur[prev][i + 1]; d += M.dist[prev][i + 1]; legs.push({ dur: M.dur[prev][i + 1], dist: M.dist[prev][i + 1] }); prev = i + 1; }
   return { dur: t, dist: d, legs };
 }
+
+// Геометрия по участкам (каждый участок рисуется своим цветом): массив массивов [lat,lng]
+export async function geometryLegs(pts) {
+  if (pts.length < 2) return null;
+  try {
+    const coords = pts.map(p => p.lng.toFixed(6) + ',' + p.lat.toFixed(6)).join(';');
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 12000);
+    const r = await fetch(`${OSRM}/route/v1/driving/${coords}?overview=false&steps=true&geometries=geojson`, { signal: ctl.signal });
+    clearTimeout(t);
+    const j = await r.json();
+    if (j.code !== 'Ok') return null;
+    return j.routes[0].legs.map(l => l.steps.flatMap(s => s.geometry.coordinates.map(c => [c[1], c[0]])));
+  } catch { return null; }
+}

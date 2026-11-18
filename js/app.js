@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.3.1';
+export const VERSION = '1.4.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -15,7 +15,16 @@ const prodL = id => PR[id] ? PR[id].name : '—';
 const min = s => Math.max(1, Math.round(s / 60));
 const initials = n => (n || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
 const telLink = p => p ? `<a href="tel:${esc(p.replace(/\s/g, ''))}">${esc(p)}</a>` : '';
-const navUrl = p => `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
+const navPref = () => { try { return localStorage.getItem('dl_nav') || 'yandex'; } catch { return 'yandex'; } };
+const navLabel = () => t(navPref() === 'google' ? 'open_google' : 'open_yandex');
+const navUrl = p => navPref() === 'google'
+  ? `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`
+  : `https://yandex.com/maps/?rtext=~${p.lat},${p.lng}&rtt=auto`;
+// весь маршрут одной ссылкой: начало — текущее место, затем остановки по порядку
+const navAllUrl = (pts, from) => navPref() === 'google'
+  ? `https://www.google.com/maps/dir/?api=1${from ? `&origin=${from.lat},${from.lng}` : ''}&destination=${pts[pts.length - 1].lat},${pts[pts.length - 1].lng}${pts.length > 1 ? '&waypoints=' + pts.slice(0, -1).map(p => p.lat + ',' + p.lng).join('|') : ''}&travelmode=driving`
+  : `https://yandex.com/maps/?rtext=${from ? from.lat + ',' + from.lng : ''}~${pts.map(p => p.lat + ',' + p.lng).join('~')}&rtt=auto`;
+const geoMsg = c => t(c === 1 ? 'gps_denied' : c === 3 ? 'gps_timeout' : c === 2 ? 'gps_unavailable' : 'gps_off');
 const itemsText = o => o.items.map(i => `${esc(prodL(i.p))} — ${num(i.q)} ${esc(unitL(PR[i.p]?.unit))}`).join('<br>');
 const overlayOpen = () => !!document.querySelector('.ov');
 
@@ -127,7 +136,7 @@ async function boot() {
   S.tab = tabsFor()[0].k;
   shell();
   clearInterval(S.poll); S.poll = setInterval(() => { if (!document.hidden) refresh(); }, S.me.role === 'admin' ? 6000 : 9000);
-  if (S.me.role !== 'admin' && !impersonating()) startGeo();
+  startGeo();
 }
 const tabsFor = () => ({
   admin: [{ k: 'map', i: '◎', l: 'tab_map' }, { k: 'orders', i: '▤', l: 'tab_orders' }, { k: 'stock', i: '▣', l: 'tab_stock' }, { k: 'people', i: '☺', l: 'tab_people' }, { k: 'more', i: '≡', l: 'tab_more' }],
@@ -199,16 +208,26 @@ async function applyUpdate() {
 let geoId = null, lastSent = null, lastSentAt = 0;
 const impersonating = () => { try { return !!localStorage.getItem('dl_admin_token'); } catch { return false; } };
 function startGeo() {
-  if (!navigator.geolocation || geoId != null) return;
-  geoId = navigator.geolocation.watchPosition(p => {
-    S.pos = { lat: p.coords.latitude, lng: p.coords.longitude };
+  if (!navigator.geolocation) { S.geoErr = 2; return; }
+  if (geoId != null) return;
+  const sendable = () => (S.me.role === 'courier' || S.me.role === 'agent') && !impersonating();
+  const ok = p => {
+    S.geoErr = 0; S.pos = { lat: p.coords.latitude, lng: p.coords.longitude };
     S.view && S.view.onPos && S.view.onPos();
+    if (!sendable()) return;
     const now = Date.now();
     if (!lastSent || (now - lastSentAt > 15000 && R.hav(lastSent, S.pos) > 15) || now - lastSentAt > 90000) {
       lastSent = S.pos; lastSentAt = now;
       rpc('dl_location', { p_lat: S.pos.lat, p_lng: S.pos.lng }).catch(() => {});
     }
-  }, () => {}, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+  };
+  const watch = hi => {
+    geoId = navigator.geolocation.watchPosition(ok, e => {
+      S.geoErr = e.code; S.view && S.view.onPos && S.view.onPos();
+      if (e.code === 3 && hi) { navigator.geolocation.clearWatch(geoId); watch(false); } // не поймали точно — берём приблизительно
+    }, { enableHighAccuracy: hi, maximumAge: 15000, timeout: hi ? 15000 : 30000 });
+  };
+  watch(true);
 }
 function stopGeo() { if (geoId != null) navigator.geolocation.clearWatch(geoId); geoId = null; lastSent = null; }
 
@@ -239,13 +258,16 @@ function mapView(main) {
       mk.bindTooltip(esc(u.name || u.login), { direction: 'top', offset: [0, -16] });
       ll.push([c.lat, c.lng]);
     }
+    drawMe();
     if (!fitted && ll.length) { fitted = true; M.fitTo(m, ll); }
   };
+  const drawMe = () => { m.g.route.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); };
   draw();
   main.querySelectorAll('[data-add]').forEach(b => b.onclick = () => startPick(b.dataset.add));
   $('#locme', main).onclick = () => {
-    if (!navigator.geolocation) return toast(t('gps_off'), 'err');
-    navigator.geolocation.getCurrentPosition(p => m.map.setView([p.coords.latitude, p.coords.longitude], 14), () => toast(t('gps_off'), 'err'), { enableHighAccuracy: true, timeout: 10000 });
+    if (S.pos) { m.map.setView([S.pos.lat, S.pos.lng], 15); return; }
+    if (!navigator.geolocation) return toast(geoMsg(2), 'err');
+    navigator.geolocation.getCurrentPosition(p => { S.pos = { lat: p.coords.latitude, lng: p.coords.longitude }; S.geoErr = 0; drawMe(); m.map.setView([S.pos.lat, S.pos.lng], 15); startGeo(); }, e => { S.geoErr = e.code; toast(geoMsg(e.code), 'err'); }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 });
   };
   $('#srch', main).onclick = async () => {
     const id = await searchPoints(S.d.points);
@@ -271,7 +293,7 @@ function mapView(main) {
   function startPick(kind) { picking = kind; $('#banner', main).hidden = false; $('#map', main).classList.add('pick'); m.map.on('click', onTap); }
   $('#pickx', main).onclick = stopPick;
   if (S.autoPick) { const k = S.autoPick; S.autoPick = null; startPick(k); }
-  return { update() { draw(); } };
+  return { update() { draw(); }, onPos() { drawMe(); } };
 }
 
 const regionOpts = () => [{ v: 'khorezm', l: t('region_khorezm') }, { v: 'kk', l: t('region_kk') }];
@@ -310,7 +332,7 @@ function pointSheet(id) {
     ${p.address ? `<p>${esc(p.address)}</p>` : ''}${p.phone ? `<p>${telLink(p.phone)}</p>` : ''}
     ${isWh ? `<div class="mini-list">${stock.length ? stock.map(s => `<div class="mini"><span>${esc(prodL(s.p))}</span><b>${num(s.q)} ${esc(unitL(PR[s.p]?.unit))}</b></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}</div>` : ''}
     <div class="acts">
-      <a class="btn sm alt" target="_blank" rel="noopener" href="${navUrl(p)}">${esc(t('open_nav'))}</a>
+      <a class="btn sm alt" target="_blank" rel="noopener" href="${navUrl(p)}">${esc(navLabel())}</a>
       ${role === 'courier' ? `<button class="btn sm" data-a="mark">${esc(t('mark_point'))}</button>` : ''}
       ${role === 'admin' ? `<button class="btn sm" data-a="send">${esc(t('mark_for'))}</button>` : ''}
       ${!isWh && role !== 'courier' ? `<button class="btn sm" data-a="order">${esc(t('new_order'))}</button>` : ''}
@@ -505,12 +527,13 @@ function moreView(main) {
   main.innerHTML = `<div class="page"><div class="card"><b>${esc(S.me.name || S.me.login)}</b><div class="mut sm">${esc(t('role_' + S.me.role))} · ${esc(S.me.login)}</div></div>
     ${S.me.role === 'admin' ? `<button class="btn alt wide" id="rep" style="margin:0 0 10px">${esc(t('report'))}</button><button class="btn ghost wide" id="swt" style="margin:0 0 10px">${esc(t('switch_user'))}</button>` : ''}
     <div class="card"><label class="fl" style="margin-top:0"><span>${esc(t('language'))}</span>${selectHtml('lng', LANGS, getLang())}</label>
+    <label class="fl"><span>${esc(t('nav_app'))}</span>${selectHtml('nav', [{ v: 'yandex', l: 'Яндекс Карты' }, { v: 'google', l: 'Google Maps' }], navPref())}</label>
     <label class="fl"><span>${esc(t('region'))}</span>${selectHtml('reg', regionOpts(), M.getRegion())}</label>
     <button class="btn ghost wide" id="ntf">${esc(t('notif_enable'))}</button><small class="mut">${esc(t('notif_hint'))}</small>
     <button class="btn ghost wide" id="chp">${esc(t('change_pass'))}</button></div>
     <div class="card"><div class="ch"><span>${esc(t('version'))}</span><b>${VERSION}</b></div></div>
     <button class="btn danger wide" id="out">${esc(t('sign_out'))}</button></div>`;
-  bindSelects(main, (id, v) => { if (id === 'reg') { M.setRegion(v); toast(t('saved')); return; } setLang(v); shell(); go('more'); });
+  bindSelects(main, (id, v) => { if (id === 'reg') { M.setRegion(v); toast(t('saved')); return; } if (id === 'nav') { try { localStorage.setItem('dl_nav', v); } catch {} toast(t('saved')); return; } setLang(v); shell(); go('more'); });
   const rp = $('#rep', main); if (rp) rp.onclick = () => go('report');
   const sw = $('#swt', main); if (sw) sw.onclick = async () => {
     const us = S.d.users.filter(u => u.active !== false && u.id !== S.me.id);
@@ -561,7 +584,8 @@ function reportView(main) {
 // ================= маршрут доставщика =================
 function routeView(main) {
   main.innerHTML = `<div class="routebox"><div class="mapbox rmap"><div id="map"></div>
-    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button></div></div>
+    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button></div>
+    <div class="legend"><i class="d wh"></i>${esc(t('route_to_wh'))} <i class="d shop"></i>${esc(t('route_to_shop'))} <i class="d free"></i>${esc(t('route_to_pt'))}</div></div>
     <div class="rlist" id="rlist"><p class="empty">${esc(t('loading'))}</p></div></div>`;
   const m = M.makeMap($('#map', main)); S.cleanup = () => { m.map.remove(); };
   let plan = null, sig = '', token = 0, fitted = false;
@@ -643,26 +667,33 @@ function routeView(main) {
       }
       if (best < 600) hints.push({ w, extra: best });
     }
-    const geo = await R.geometry([cen, ...ordered.map(s => ({ lat: P[s.id].lat, lng: P[s.id].lng }))]);
+    const geo = await R.geometryLegs([cen, ...ordered.map(s => ({ lat: P[s.id].lat, lng: P[s.id].lng }))]);
     if (my !== token) return;
     plan = { ordered, tot, hints, short: v.short, approx: Mx.approx, noGps: !start, geo, cen, base };
     paint();
   }
   const stopName = s => P[s.id]?.name || '—';
+  const legColor = s => s.type === 'wh' ? '#f59e0b' : s.type === 'shop' ? '#0d9488' : '#6366f1';
   function paint() {
     const el = $('#rlist', main); if (!el) return;
     m.g.route.clearLayers(); m.g.points.clearLayers();
     if (!plan || plan.empty) { el.innerHTML = `<p class="empty">${esc(t('no_stops'))}</p>`; if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); if (!fitted) { m.map.setView([S.pos.lat, S.pos.lng], 12); fitted = true; } } return; }
     const ll = [];
-    if (plan.geo) { M.polyline(plan.geo, { color: '#fff', weight: 9, opacity: .95 }).addTo(m.g.route); M.polyline(plan.geo, { color: '#0d9488', weight: 5, opacity: 1 }).addTo(m.g.route); }
-    else M.polyline([[plan.cen.lat, plan.cen.lng], ...plan.ordered.map(s => [P[s.id].lat, P[s.id].lng])], { color: '#0f766e', weight: 4, dashArray: '6 8' }).addTo(m.g.route);
+    plan.ordered.forEach((s, i) => {
+      const col = legColor(s);
+      const prev = i === 0 ? [plan.cen.lat, plan.cen.lng] : [P[plan.ordered[i - 1].id].lat, P[plan.ordered[i - 1].id].lng];
+      const pts = plan.geo && plan.geo[i] && plan.geo[i].length ? plan.geo[i] : null;
+      if (pts) { M.polyline(pts, { color: '#fff', weight: 9, opacity: .95 }).addTo(m.g.route); M.polyline(pts, { color: col, weight: 5, opacity: 1 }).addTo(m.g.route); }
+      else M.polyline([prev, [P[s.id].lat, P[s.id].lng]], { color: col, weight: 4, dashArray: '6 8' }).addTo(m.g.route);
+    });
     if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); ll.push([S.pos.lat, S.pos.lng]); }
     plan.ordered.forEach((s, i) => { const p = P[s.id]; M.marker([p.lat, p.lng], M.numIcon(i + 1, s.type === 'wh' ? 'wh' : 'shop')).addTo(m.g.route); ll.push([p.lat, p.lng]); });
     for (const h of plan.hints) { M.marker([h.w.lat, h.w.lng], M.whIcon()).addTo(m.g.route).bindTooltip(esc(h.w.name)); }
     if (!fitted) { fitted = true; M.fitTo(m, ll); }
     const T = plan.tot;
     el.innerHTML = `<div class="sum"><b>${esc(t('total'))}: ${min(T.dur)} ${esc(t('min'))} · ${(T.dist / 1000).toFixed(1)} ${esc(t('km'))}</b>${S.me.capacity > 0 ? `<span>${esc(t('load'))}: ${num(plan.base)}/${num(S.me.capacity)}</span>` : ''}</div>
-      ${plan.approx ? `<p class="warn">${esc(t('approx'))}</p>` : ''}${plan.noGps ? `<p class="warn">${esc(t('gps_off'))}</p>` : ''}
+      <a class="btn wide alt" style="margin:0 0 8px" target="_blank" rel="noopener" href="${navAllUrl(plan.ordered.map(s => P[s.id]), S.pos)}">${esc(t('route_all'))}</a>
+      ${plan.approx ? `<p class="warn">${esc(t('approx'))}</p>` : ''}${plan.noGps ? `<p class="warn">${esc(geoMsg(S.geoErr))}</p>` : ''}
       ${plan.short.length ? `<p class="warn">${esc(t('shortage'))}: ${plan.short.map(x => `${esc(prodL(x.p))} ${num(x.q)}`).join(', ')}</p>` : ''}
       ${plan.hints.map(h => `<div class="hint"><div><b>${esc(h.w.name)}</b><br><span class="mut sm">${esc(t('on_the_way'))}: ${esc(t('on_the_way_hint', { m: min(h.extra) }))}</span></div><button class="btn sm alt" data-pw="${h.w.id}">${esc(t('btn_picked'))}</button></div>`).join('')}
       ${plan.ordered.map((s, i) => stopCard(s, i)).join('')}`;
@@ -690,7 +721,7 @@ function routeView(main) {
       <div class="ch"><b>${esc(stopName(s))}</b><span class="mut sm">${min(T.dur)} ${esc(t('min'))} · ${(T.dist / 1000).toFixed(1)} ${esc(t('km'))}</span></div>
       <div class="mut sm">${esc(label)}${p.address ? ' · ' + esc(p.address) : ''}</div>${what ? `<div class="what">${what}</div>` : ''}
       <div class="acts"><button class="btn sm ${canGo ? '' : 'ghost'}" data-done="${s.key}">${esc(s.type === 'wh' ? t('btn_picked') : s.type === 'shop' ? t('btn_delivered') : t('btn_visited'))}</button>
-      <a class="btn sm alt" target="_blank" rel="noopener" href="${navUrl(p)}">${esc(t('open_nav'))}</a>
+      <a class="btn sm alt" target="_blank" rel="noopener" href="${navUrl(p)}">${esc(navLabel())}</a>
       <button class="btn sm ghost" data-go="${p.id}">${esc(t('show_on_map'))}</button>${s.type === 'free' ? `<button class="btn sm ghost" data-rm="${s.mark.id}">${esc(t('btn_remove'))}</button>` : ''}${p.phone ? `<a class="btn sm ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">☎</a>` : ''}</div></div></div>`;
   }
   async function doPickup(wid) {
@@ -700,12 +731,12 @@ function routeView(main) {
   }
   async function afterAction() { await refresh(); sig = signature(); await build(); }
   $('#rb', main).onclick = () => { fitted = false; $('#rlist', main).innerHTML = `<p class="empty">${esc(t('rebuilding'))}</p>`; build(); };
-  $('#locme', main).onclick = () => { if (S.pos) m.map.setView([S.pos.lat, S.pos.lng], 14); else toast(t('gps_off'), 'err'); };
+  $('#locme', main).onclick = () => { if (S.pos) m.map.setView([S.pos.lat, S.pos.lng], 15); else { startGeo(); toast(geoMsg(S.geoErr), 'err'); } };
   sig = signature(); build();
   let firstFix = false;
   return {
     update() { const s = signature(); if (s !== sig && !overlayOpen()) { sig = s; build(); } },
-    onPos() { if (!firstFix && S.pos) { firstFix = true; build(); } },
+    onPos() { if (!firstFix && S.pos) { firstFix = true; build(); } else if (plan && !plan.empty) { m.g.points.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.points); } },
   };
 }
 

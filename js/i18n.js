@@ -207,6 +207,16 @@ const S = {
   as_user: ['Вы вошли как', 'Siz quyidagi sifatida kirdingiz', 'Signed in as'],
   back_admin: ['Вернуться', 'Qaytish', 'Go back'],
   switch_user: ['Войти как сотрудник', 'Xodim sifatida kirish', 'Sign in as an employee'],
+  open_yandex: ['Открыть в Яндекс Картах', 'Yandex Xaritada ochish', 'Open in Yandex Maps'],
+  open_google: ['Открыть в Google Maps', 'Google Maps da ochish', 'Open in Google Maps'],
+  nav_app: ['Навигатор', 'Navigator', 'Navigator'],
+  route_all: ['Весь маршрут в навигаторе', "Butun yo'nalishni navigatorda ochish", 'Open the whole route in navigator'],
+  route_to_wh: ['К складу', 'Omborga', 'To warehouse'],
+  route_to_shop: ['К магазину', "Do'konga", 'To shop'],
+  route_to_pt: ['К точке', 'Nuqtaga', 'To point'],
+  gps_denied: ['Доступ к местоположению запрещён. Разрешите его для этого сайта в настройках браузера и обновите страницу', "Joylashuvga ruxsat berilmagan. Brauzer sozlamalarida bu sayt uchun ruxsat bering va sahifani yangilang", 'Location access is blocked. Allow it for this site in the browser settings and reload'],
+  gps_unavailable: ['Местоположение недоступно. Включите геолокацию (GPS) на телефоне', "Joylashuv mavjud emas. Telefonda geolokatsiyani (GPS) yoqing", 'Location is unavailable. Turn on location (GPS) on your phone'],
+  gps_timeout: ['Не удаётся быстро определить место. Выйдите на открытое место и нажмите ◉', "Joylashuvni tez aniqlab bo'lmadi. Ochiq joyga chiqing va ◉ ni bosing", 'Cannot get your location yet. Move to an open area and tap ◉'],
   need_coords: ['Укажите точку на карте', 'Nuqtani xaritada belgilang', 'Pick the point on the map'],
 };
 
