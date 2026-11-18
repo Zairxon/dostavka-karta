@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -647,7 +647,7 @@ function routeView(main) {
     m.g.route.clearLayers(); m.g.points.clearLayers();
     if (!plan || plan.empty) { el.innerHTML = `<p class="empty">${esc(t('no_stops'))}</p>`; if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); if (!fitted) { m.map.setView([S.pos.lat, S.pos.lng], 12); fitted = true; } } return; }
     const ll = [];
-    if (plan.geo) M.polyline(plan.geo, { color: '#0f766e', weight: 5, opacity: .8 }).addTo(m.g.route);
+    if (plan.geo) { M.polyline(plan.geo, { color: '#fff', weight: 9, opacity: .95 }).addTo(m.g.route); M.polyline(plan.geo, { color: '#0d9488', weight: 5, opacity: 1 }).addTo(m.g.route); }
     else M.polyline([[plan.cen.lat, plan.cen.lng], ...plan.ordered.map(s => [P[s.id].lat, P[s.id].lng])], { color: '#0f766e', weight: 4, dashArray: '6 8' }).addTo(m.g.route);
     if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); ll.push([S.pos.lat, S.pos.lng]); }
     plan.ordered.forEach((s, i) => { const p = P[s.id]; M.marker([p.lat, p.lng], M.numIcon(i + 1, s.type === 'wh' ? 'wh' : 'shop')).addTo(m.g.route); ll.push([p.lat, p.lng]); });
