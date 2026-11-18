@@ -32,8 +32,23 @@ const ico = (cls, txt) => L.divIcon({ className: 'pin-wrap', html: `<div class="
 export const shopIcon = () => ico('shop', SVG_SHOP);
 export const whIcon = () => ico('wh', SVG_WH);
 export const numIcon = (n, kind) => ico((kind || 'shop') + ' num', n);
-export const courierIcon = (ini, stale, role) => L.divIcon({ className: 'pin-wrap', html: `<div class="cour ${role === 'agent' ? 'agent' : ''} ${stale ? 'stale' : ''}">${ini}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] });
-export const meIcon = () => L.divIcon({ className: 'pin-wrap', html: '<div class="me"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+const arrow = (cls, h) => (h == null ? '' : `<b class="${cls}" style="transform:rotate(${Math.round(h)}deg)"></b>`);
+export const courierIcon = (ini, stale, role, heading) => L.divIcon({ className: 'pin-wrap', html: `<div class="cour ${role === 'agent' ? 'agent' : ''} ${stale ? 'stale' : ''}">${arrow('arr', heading)}${ini}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] });
+export function updateCourierIcon(mk, stale, heading) {
+  const el = mk.getElement && mk.getElement(); const c = el && el.querySelector('.cour'); if (!c) return;
+  c.classList.toggle('stale', !!stale);
+  let ar = c.querySelector('.arr');
+  if (heading == null) { if (ar) ar.remove(); return; }
+  if (!ar) { ar = document.createElement('b'); ar.className = 'arr'; c.prepend(ar); }
+  ar.style.transform = `rotate(${Math.round(heading)}deg)`;
+}
+export function animateTo(mk, to, ms = 1800) {
+  const from = mk.getLatLng(), t0 = performance.now();
+  if (mk._raf) cancelAnimationFrame(mk._raf);
+  const step = now => { const k = Math.min(1, (now - t0) / ms); mk.setLatLng([from.lat + (to[0] - from.lat) * k, from.lng + (to[1] - from.lng) * k]); if (k < 1) mk._raf = requestAnimationFrame(step); };
+  mk._raf = requestAnimationFrame(step);
+}
+export const meIcon = heading => L.divIcon({ className: 'pin-wrap', html: `<div class="me">${arrow('arrow', heading)}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
 
 export function fitTo(m, latlngs) {
   if (!latlngs.length) return;

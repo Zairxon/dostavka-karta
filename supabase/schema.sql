@@ -483,3 +483,11 @@ begin
   return jsonb_build_object('token', t, 'role', u.role, 'id', u.id, 'name', u.name);
 end $$;
 grant execute on function dl_impersonate(text,uuid) to anon, authenticated;
+
+-- v1.5.0: живое отслеживание (направление, скорость, след движения)
+alter table dl_locations add column if not exists heading double precision, add column if not exists speed double precision;
+create table if not exists dl_track(id bigserial primary key, user_id uuid not null references dl_users(id) on delete cascade, lat double precision not null, lng double precision not null, ts timestamptz not null default now());
+create index if not exists dl_track_user_ts on dl_track(user_id, ts);
+alter table dl_track enable row level security;
+revoke all on dl_track from anon, authenticated;
+-- функции dl_location (5 аргументов), dl_live, dl_track_get — см. миграцию dl_live_tracking

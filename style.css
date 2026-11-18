@@ -114,3 +114,17 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 .leaflet-tooltip{border:0;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);font-weight:600;color:var(--ink)}
 .leaflet-control-zoom a{color:var(--pri)}
 .d.free{background:#6366f1}.btn.wide{display:flex}
+
+#app.fs .top,#app.fs .tabs,#app.fs .upd{display:none}
+#app.fs #toasts{bottom:24px}
+#app.fs .routebox{position:relative}
+#app.fs .rmap{position:absolute;inset:0;height:100%;min-height:0}
+#app.fs .rlist{position:absolute;left:8px;right:8px;bottom:8px;max-height:38%;border-radius:16px;z-index:600;box-shadow:0 4px 18px rgba(0,0,0,.3);background:rgba(244,248,247,.97)}
+#app.fs .routebox .legend{bottom:calc(38% + 14px)}
+.fchip{position:absolute;left:10px;right:10px;bottom:34px;z-index:520;background:#fff;border-radius:14px;padding:8px 10px 8px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:var(--shadow)}
+.fchip[hidden]{display:none}
+.btn.on{background:var(--pri);color:#fff}
+.me{position:relative}
+.me .arrow{position:absolute;left:50%;top:-15px;margin-left:-7px;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid #2563eb;transform-origin:50% 24px;pointer-events:none}
+.cour{position:relative}
+.cour .arr{position:absolute;left:50%;top:-13px;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid #1e3a8a;transform-origin:50% 32px;pointer-events:none}

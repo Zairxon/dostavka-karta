@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.5.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -159,7 +159,7 @@ function shell() {
 function go(tab) {
   S.tab = tab;
   root.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === (tab === 'report' ? 'more' : tab)));
-  S.cleanup && S.cleanup(); S.cleanup = null; S.view = null;
+  S.cleanup && S.cleanup(); S.cleanup = null; S.view = null; root.classList.remove('fs');
   const main = $('#main'); main.innerHTML = ''; main.scrollTop = 0;
   const v = { map: mapView, orders: ordersView, stock: stockView, people: peopleView, more: moreView, route: routeView, report: reportView }[tab];
   S.view = v(main) || null;
@@ -212,13 +212,14 @@ function startGeo() {
   if (geoId != null) return;
   const sendable = () => (S.me.role === 'courier' || S.me.role === 'agent') && !impersonating();
   const ok = p => {
-    S.geoErr = 0; S.pos = { lat: p.coords.latitude, lng: p.coords.longitude };
+    S.geoErr = 0; S.pos = { lat: p.coords.latitude, lng: p.coords.longitude, heading: Number.isFinite(p.coords.heading) ? p.coords.heading : null, speed: Number.isFinite(p.coords.speed) ? p.coords.speed : null };
+    if (S.follow && S.map) S.map.panTo([S.pos.lat, S.pos.lng], { animate: true });
     S.view && S.view.onPos && S.view.onPos();
     if (!sendable()) return;
     const now = Date.now();
     if (!lastSent || (now - lastSentAt > 15000 && R.hav(lastSent, S.pos) > 15) || now - lastSentAt > 90000) {
       lastSent = S.pos; lastSentAt = now;
-      rpc('dl_location', { p_lat: S.pos.lat, p_lng: S.pos.lng }).catch(() => {});
+      rpc('dl_location', { p_lat: S.pos.lat, p_lng: S.pos.lng, p_heading: S.pos.heading, p_speed: S.pos.speed }).catch(() => {});
     }
   };
   const watch = hi => {
@@ -236,13 +237,13 @@ function mapView(main) {
   const role = S.me.role;
   main.innerHTML = `<div class="mapbox"><div id="map"></div>
     <div class="mapbar">${role === 'admin' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button><button class="btn sm alt" data-add="warehouse">＋ ${esc(t('warehouse'))}</button>` : role === 'agent' ? `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>` : `<button class="btn sm" data-add="shop">＋ ${esc(t('shop'))}</button>`}
-    <button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="srch">🔍</button><button class="btn sm ghost" id="regb">⌖</button></div>
+    <button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="srch">🔍</button><button class="btn sm ghost" id="regb">⌖</button><button class="btn sm ghost" id="fsb">⛶</button></div>
     <div class="banner" id="banner" hidden><span>${esc(t('pick_on_map'))}</span><button class="btn sm ghost" id="pickx">${esc(t('pick_cancel'))}</button></div>
     <div class="legend"><i class="d shop"></i>${esc(t('legend_shop'))} <i class="d wh"></i>${esc(t('legend_wh'))}${role === 'admin' ? ` <i class="d cour"></i>${esc(t('legend_courier'))} <i class="d agt"></i>${esc(t('role_agent'))}` : ''}</div></div>`;
   const m = M.makeMap($('#map', main)); let fitted = false, picking = null;
   S.cleanup = () => m.map.remove();
   const draw = () => {
-    m.g.points.clearLayers(); m.g.couriers.clearLayers();
+    m.g.points.clearLayers();
     const ll = [];
     for (const p of S.d.points) {
       const mk = M.marker([p.lat, p.lng], p.kind === 'warehouse' ? M.whIcon() : M.shopIcon()).addTo(m.g.points);
@@ -250,19 +251,54 @@ function mapView(main) {
       mk.on('click', () => { if (!picking) pointSheet(p.id); });
       ll.push([p.lat, p.lng]);
     }
-    if (role === 'admin') for (const c of S.d.locations) {
-      const u = U[c.id]; if (!u) continue;
-      const age = (Date.now() - new Date(c.ts).getTime()) / 60000;
-      const mk = M.marker([c.lat, c.lng], M.courierIcon(esc(initials(u.name || u.login)), age > 10, u.role)).addTo(m.g.couriers);
-      mk.on('click', () => courierSheet(c, u));
-      mk.bindTooltip(esc(u.name || u.login), { direction: 'top', offset: [0, -16] });
-      ll.push([c.lat, c.lng]);
-    }
+    if (role === 'admin') for (const c of S.d.locations) ll.push([c.lat, c.lng]);
     drawMe();
     if (!fitted && ll.length) { fitted = true; M.fitTo(m, ll); }
   };
-  const drawMe = () => { m.g.route.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); };
+  const drawMe = () => { m.g.route.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon(S.pos.heading)).addTo(m.g.route); };
   draw();
+  bindFs($('#fsb', main), m);
+  // ----- живое положение сотрудников (админ): плавное движение, слежение, путь -----
+  const live = new Map(); let follow = null, trail = null, liveTimer = null;
+  const chip = document.createElement('div'); chip.className = 'fchip'; chip.hidden = true; $('.mapbox', main).appendChild(chip);
+  const setChip = (html, onClose) => { chip.hidden = !html; if (!html) return; chip.innerHTML = `<span>${html}</span><button class="btn sm ghost" id="fx">✕</button>`; chip.querySelector('#fx').onclick = onClose; };
+  const setFollow = id => {
+    follow = id;
+    if (!id) { setChip('', null); return; }
+    const u = U[id], e = live.get(id);
+    setChip(`${esc(t('following'))}: <b>${esc(u?.name || u?.login || '')}</b>`, () => setFollow(null));
+    if (e) m.map.setView(e.ll, Math.max(m.map.getZoom(), 15));
+  };
+  const showTrack = async id => {
+    const r = await safe('dl_track_get', { p_user: id, p_hours: 12 }); if (!r.ok) return;
+    if (trail) { m.map.removeLayer(trail); trail = null; }
+    if (!r.v.length) return toast(t('no_track'), 'err');
+    trail = M.polyline(r.v.map(x => [x[0], x[1]]), { color: '#2563eb', weight: 5, opacity: .85 }).addTo(m.map);
+    m.map.fitBounds(trail.getBounds(), { padding: [50, 50], maxZoom: 16 });
+    const u = U[id];
+    setChip(`${esc(t('trail_on'))}: <b>${esc(u?.name || u?.login || '')}</b>`, () => { if (trail) m.map.removeLayer(trail); trail = null; setChip('', null); });
+  };
+  const applyLive = list => {
+    const ids = new Set();
+    for (const c of list) {
+      const u = U[c.id]; if (!u) continue; ids.add(c.id);
+      const stale = (Date.now() - new Date(c.ts).getTime()) / 60000 > 10;
+      let e = live.get(c.id);
+      if (!e) {
+        const mk = M.marker([c.lat, c.lng], M.courierIcon(esc(initials(u.name || u.login)), stale, u.role, c.heading)).addTo(m.g.couriers);
+        mk.on('click', () => courierSheet(e.c, u, { follow: setFollow, track: showTrack }));
+        mk.bindTooltip(esc(u.name || u.login), { direction: 'top', offset: [0, -16] });
+        e = { mk, ll: [c.lat, c.lng], c }; live.set(c.id, e);
+      } else { e.c = c; e.ll = [c.lat, c.lng]; M.animateTo(e.mk, e.ll); M.updateCourierIcon(e.mk, stale, c.heading); }
+      if (follow === c.id) m.map.panTo(e.ll, { animate: true, duration: 1.2 });
+    }
+    for (const [id, e] of live) if (!ids.has(id)) { m.g.couriers.removeLayer(e.mk); live.delete(id); }
+  };
+  if (role === 'admin') {
+    applyLive(S.d.locations);
+    liveTimer = setInterval(async () => { if (document.hidden) return; try { applyLive(await rpc('dl_live', {})); } catch {} }, 3000);
+  }
+  S.cleanup = () => { clearInterval(liveTimer); m.map.remove(); };
   main.querySelectorAll('[data-add]').forEach(b => b.onclick = () => startPick(b.dataset.add));
   $('#locme', main).onclick = () => {
     if (S.pos) { m.map.setView([S.pos.lat, S.pos.lng], 15); return; }
@@ -296,6 +332,12 @@ function mapView(main) {
   return { update() { draw(); }, onPos() { drawMe(); } };
 }
 
+function bindFs(btn, m) {
+  if (!btn) return;
+  const paint = () => { btn.textContent = root.classList.contains('fs') ? '✕' : '⛶'; };
+  btn.onclick = () => { root.classList.toggle('fs'); paint(); setTimeout(() => m.map.invalidateSize(), 120); setTimeout(() => m.map.invalidateSize(), 400); };
+  paint();
+}
 const regionOpts = () => [{ v: 'khorezm', l: t('region_khorezm') }, { v: 'kk', l: t('region_kk') }];
 
 // Поиск точки по названию/адресу: окно с полем и списком результатов
@@ -314,13 +356,16 @@ function searchPoints(points) {
   });
 }
 
-function courierSheet(c, u) {
+function courierSheet(c, u, acts) {
   const age = Math.round((Date.now() - new Date(c.ts).getTime()) / 60000);
   const mine = S.d.orders.filter(o => o.courier_id === u.id && ['assigned', 'picked'].includes(o.status));
   sheet(`<h3>${esc(u.name || u.login)}</h3><p class="mut">${esc(t('role_' + u.role))} · ${age < 1 ? esc(t('just_now')) : esc(t('ago_min', { m: age }))}</p>
-    <p>${telLink(u.phone)}</p>
+    <p>${telLink(u.phone)}${c.speed > 0.8 ? ` · ${Math.round(c.speed * 3.6)} ${esc(t('kmh'))}` : ''}</p>
     ${mine.length ? mine.map(o => `<div class="mini">${esc(t('order_no'))}${o.no} · ${esc(P[o.shop_id]?.name || '')} <span class="chip s-${o.status}">${esc(t('status_' + o.status))}</span></div>`).join('') : `<p class="mut">${esc(t('nothing'))}</p>`}
-    <div class="row end"><button class="btn ghost" data-x>${esc(t('ok'))}</button></div>`);
+    <div class="acts">${acts ? `<button class="btn sm" data-a="follow">${esc(t('follow_btn'))}</button><button class="btn sm alt" data-a="track">${esc(t('track_btn'))}</button>` : ''}</div>
+    <div class="row end"><button class="btn ghost" data-x>${esc(t('ok'))}</button></div>`, (o, close) => {
+    o.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (b && acts) { close(); acts[b.dataset.a](u.id); } });
+  });
 }
 
 function pointSheet(id) {
@@ -584,10 +629,13 @@ function reportView(main) {
 // ================= маршрут доставщика =================
 function routeView(main) {
   main.innerHTML = `<div class="routebox"><div class="mapbox rmap"><div id="map"></div>
-    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button></div>
+    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="fol">➤</button><button class="btn sm ghost" id="fsb">⛶</button></div>
     <div class="legend"><i class="d wh"></i>${esc(t('route_to_wh'))} <i class="d shop"></i>${esc(t('route_to_shop'))} <i class="d free"></i>${esc(t('route_to_pt'))}</div></div>
     <div class="rlist" id="rlist"><p class="empty">${esc(t('loading'))}</p></div></div>`;
-  const m = M.makeMap($('#map', main)); S.cleanup = () => { m.map.remove(); };
+  const m = M.makeMap($('#map', main)); S.map = m.map; S.cleanup = () => { S.follow = false; S.map = null; m.map.remove(); };
+  bindFs($('#fsb', main), m);
+  const fol = $('#fol', main); S.follow = false;
+  fol.onclick = () => { S.follow = !S.follow; fol.classList.toggle('on', S.follow); if (S.follow && S.pos) m.map.setView([S.pos.lat, S.pos.lng], Math.max(m.map.getZoom(), 16)); else if (S.follow) toast(geoMsg(S.geoErr), 'err'); };
   let plan = null, sig = '', token = 0, fitted = false;
   const signature = () => {
     const d = S.d, me = S.me.id;
@@ -672,12 +720,13 @@ function routeView(main) {
     plan = { ordered, tot, hints, short: v.short, approx: Mx.approx, noGps: !start, geo, cen, base };
     paint();
   }
+  function drawMeR() { m.g.points.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon(S.pos.heading)).addTo(m.g.points); }
   const stopName = s => P[s.id]?.name || '—';
   const legColor = s => s.type === 'wh' ? '#f59e0b' : s.type === 'shop' ? '#0d9488' : '#6366f1';
   function paint() {
     const el = $('#rlist', main); if (!el) return;
     m.g.route.clearLayers(); m.g.points.clearLayers();
-    if (!plan || plan.empty) { el.innerHTML = `<p class="empty">${esc(t('no_stops'))}</p>`; if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); if (!fitted) { m.map.setView([S.pos.lat, S.pos.lng], 12); fitted = true; } } return; }
+    if (!plan || plan.empty) { el.innerHTML = `<p class="empty">${esc(t('no_stops'))}</p>`; drawMeR(); if (S.pos && !fitted) { m.map.setView([S.pos.lat, S.pos.lng], 12); fitted = true; } return; }
     const ll = [];
     plan.ordered.forEach((s, i) => {
       const col = legColor(s);
@@ -686,7 +735,7 @@ function routeView(main) {
       if (pts) { M.polyline(pts, { color: '#fff', weight: 9, opacity: .95 }).addTo(m.g.route); M.polyline(pts, { color: col, weight: 5, opacity: 1 }).addTo(m.g.route); }
       else M.polyline([prev, [P[s.id].lat, P[s.id].lng]], { color: col, weight: 4, dashArray: '6 8' }).addTo(m.g.route);
     });
-    if (S.pos) { M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.route); ll.push([S.pos.lat, S.pos.lng]); }
+    drawMeR(); if (S.pos) ll.push([S.pos.lat, S.pos.lng]);
     plan.ordered.forEach((s, i) => { const p = P[s.id]; M.marker([p.lat, p.lng], M.numIcon(i + 1, s.type === 'wh' ? 'wh' : 'shop')).addTo(m.g.route); ll.push([p.lat, p.lng]); });
     for (const h of plan.hints) { M.marker([h.w.lat, h.w.lng], M.whIcon()).addTo(m.g.route).bindTooltip(esc(h.w.name)); }
     if (!fitted) { fitted = true; M.fitTo(m, ll); }
@@ -736,7 +785,7 @@ function routeView(main) {
   let firstFix = false;
   return {
     update() { const s = signature(); if (s !== sig && !overlayOpen()) { sig = s; build(); } },
-    onPos() { if (!firstFix && S.pos) { firstFix = true; build(); } else if (plan && !plan.empty) { m.g.points.clearLayers(); if (S.pos) M.marker([S.pos.lat, S.pos.lng], M.meIcon()).addTo(m.g.points); } },
+    onPos() { if (!firstFix && S.pos) { firstFix = true; build(); } else drawMeR(); },
   };
 }
 
