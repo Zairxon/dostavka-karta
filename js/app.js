@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.3.1';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -184,7 +184,14 @@ async function checkUpdate() {
 setInterval(checkUpdate, 5 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkUpdate(); refresh(); } });
 async function applyUpdate() {
-  try { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); const ks = await caches.keys(); for (const k of ks) await caches.delete(k); } catch {}
+  const b = $('#updb'); if (b) { b.disabled = true; b.textContent = '…'; }
+  try {
+    // сбросить кэш браузера для файлов приложения, затем перезагрузить
+    const files = ['./', 'index.html', 'style.css', 'js/app.js', 'js/api.js', 'js/i18n.js', 'js/ui.js', 'js/map.js', 'js/route.js', 'sw.js', 'version.json'];
+    await Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+    const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister();
+    const ks = await caches.keys(); for (const k of ks) await caches.delete(k);
+  } catch {}
   location.reload();
 }
 
