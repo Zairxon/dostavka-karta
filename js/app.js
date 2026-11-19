@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.5.1';
+export const VERSION = '1.5.2';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -637,7 +637,7 @@ function routeView(main) {
   root.classList.remove('nolist');
   $('#lst', main).onclick = () => { root.classList.toggle('nolist'); setTimeout(() => m.map.invalidateSize(), 120); };
   const fol =$('#fol', main); S.follow = false;
-  fol.onclick = () => { S.follow = !S.follow; fol.classList.toggle('on', S.follow); if (S.follow && S.pos) m.map.setView([S.pos.lat, S.pos.lng], Math.max(m.map.getZoom(), 16)); else if (S.follow) toast(geoMsg(S.geoErr), 'err'); };
+  fol.onclick = () => { S.follow = false; if (S.pos) m.map.setView([S.pos.lat, S.pos.lng], Math.max(m.map.getZoom(), 16)); else toast(geoMsg(S.geoErr), 'err'); };
   let plan = null, sig = '', token = 0, fitted = false;
   const signature = () => {
     const d = S.d, me = S.me.id;
