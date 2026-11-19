@@ -1,4 +1,4 @@
-const C = 'dostavka-1.6.2';
+const C = 'dostavka-1.7.0';
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.json', 'icon.svg', 'vendor/leaflet.js', 'vendor/leaflet.css',
   'js/app.js', 'js/api.js', 'js/i18n.js', 'js/ui.js', 'js/map.js', 'js/route.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

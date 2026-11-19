@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.6.2';
+export const VERSION = '1.7.0';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -736,8 +736,9 @@ function routeView(main) {
       const col = legColor(s);
       const prev = i === 0 ? [plan.cen.lat, plan.cen.lng] : [P[plan.ordered[i - 1].id].lat, P[plan.ordered[i - 1].id].lng];
       const pts = plan.geo && plan.geo[i] && plan.geo[i].length ? plan.geo[i] : null;
-      if (pts) { M.polyline(pts, { color: '#fff', weight: 9, opacity: .95 }).addTo(m.g.route); M.polyline(pts, { color: col, weight: 5, opacity: 1 }).addTo(m.g.route); }
-      else M.polyline([prev, [P[s.id].lat, P[s.id].lng]], { color: col, weight: 4, dashArray: '6 8' }).addTo(m.g.route);
+      const line = pts || [prev, [P[s.id].lat, P[s.id].lng]];
+      if (i === 0) { M.polyline(line, { color: '#fff', weight: 6, opacity: .9 }).addTo(m.g.route); M.polyline(line, { color: col, weight: 3.5, opacity: 1 }).addTo(m.g.route); }
+      else M.polyline(line, { color: col, weight: 2.5, opacity: .95, dashArray: '7 7' }).addTo(m.g.route);
     });
     drawMeR(); if (S.pos) ll.push([S.pos.lat, S.pos.lng]);
     plan.ordered.forEach((s, i) => { const p = P[s.id]; M.marker([p.lat, p.lng], M.numIcon(i + 1, s.type === 'wh' ? 'wh' : 'shop')).addTo(m.g.route); ll.push([p.lat, p.lng]); });
