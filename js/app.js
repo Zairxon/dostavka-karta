@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.5.1';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -629,12 +629,14 @@ function reportView(main) {
 // ================= маршрут доставщика =================
 function routeView(main) {
   main.innerHTML = `<div class="routebox"><div class="mapbox rmap"><div id="map"></div>
-    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="fol">➤</button><button class="btn sm ghost" id="fsb">⛶</button></div>
+    <div class="mapbar"><button class="btn sm" id="rb">⟳ ${esc(t('build_route'))}</button><button class="btn sm ghost" id="locme">◉</button><button class="btn sm ghost" id="fol">➤</button><button class="btn sm ghost" id="fsb">⛶</button><button class="btn sm ghost" id="lst">☰</button></div>
     <div class="legend"><i class="d wh"></i>${esc(t('route_to_wh'))} <i class="d shop"></i>${esc(t('route_to_shop'))} <i class="d free"></i>${esc(t('route_to_pt'))}</div></div>
     <div class="rlist" id="rlist"><p class="empty">${esc(t('loading'))}</p></div></div>`;
   const m = M.makeMap($('#map', main)); S.map = m.map; S.cleanup = () => { S.follow = false; S.map = null; m.map.remove(); };
   bindFs($('#fsb', main), m);
-  const fol = $('#fol', main); S.follow = false;
+  root.classList.remove('nolist');
+  $('#lst', main).onclick = () => { root.classList.toggle('nolist'); setTimeout(() => m.map.invalidateSize(), 120); };
+  const fol =$('#fol', main); S.follow = false;
   fol.onclick = () => { S.follow = !S.follow; fol.classList.toggle('on', S.follow); if (S.follow && S.pos) m.map.setView([S.pos.lat, S.pos.lng], Math.max(m.map.getZoom(), 16)); else if (S.follow) toast(geoMsg(S.geoErr), 'err'); };
   let plan = null, sig = '', token = 0, fitted = false;
   const signature = () => {

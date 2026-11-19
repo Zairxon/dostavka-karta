@@ -121,6 +121,9 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 #app.fs .rmap{position:absolute;inset:0;height:100%;min-height:0}
 #app.fs .rlist{position:absolute;left:8px;right:8px;bottom:8px;max-height:38%;border-radius:16px;z-index:600;box-shadow:0 4px 18px rgba(0,0,0,.3);background:rgba(244,248,247,.97)}
 #app.fs .routebox .legend{bottom:calc(38% + 14px)}
+#lst{display:none}#app.fs #lst{display:inline-flex}
+#app.fs.nolist .rlist{display:none}
+#app.fs.nolist .routebox .legend{bottom:14px}
 .fchip{position:absolute;left:10px;right:10px;bottom:34px;z-index:520;background:#fff;border-radius:14px;padding:8px 10px 8px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:var(--shadow)}
 .fchip[hidden]{display:none}
 .btn.on{background:var(--pri);color:#fff}
