@@ -1,10 +1,10 @@
 import { rpc, session } from './api.js';
 import { t, setLang, getLang, LANGS, errText } from './i18n.js';
-import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selectHtml, bindSelects, bindPhone, fmtPhone, phoneOk } from './ui.js';
+import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selectHtml, bindSelects, bindPhone, fmtPhone, phoneOk, pwBox } from './ui.js';
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.7.0';
+export const VERSION = '1.7.1';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
@@ -43,7 +43,7 @@ function loginView() {
   root.innerHTML = `<div class="login"><div class="login-card">
     <div class="logo">${logoSvg()}</div><h1>${esc(t('app_name'))}</h1>
     <label class="fl"><span>${esc(t('login'))}</span><input id="lg" autocomplete="username" autocapitalize="none"></label>
-    <label class="fl"><span>${esc(t('password'))}</span><input id="pw" type="password" autocomplete="current-password"></label>
+    <label class="fl"><span>${esc(t('password'))}</span>${pwBox('<input id="pw" type="password" autocomplete="current-password">')}</label>
     <small class="err" id="lerr"></small>
     <button class="btn wide" id="lgo">${esc(t('sign_in'))}</button>
     <div class="lang-row">${selectHtml('lng', LANGS, getLang())}</div>

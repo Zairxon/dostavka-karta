@@ -137,3 +137,9 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 .fchip{right:84px}
 #app.fs .routebox .locfab{bottom:calc(38% + 20px)}
 #app.fs.nolist .routebox .locfab{bottom:calc(96px + env(safe-area-inset-bottom))}
+
+.pwbox{position:relative;display:block}
+.pwbox input{width:100%;padding-right:48px}
+.pwbox .eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:42px;height:42px;border:0;background:none;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:10px}
+.pwbox .eye .slash{display:none}
+.pwbox .eye.on{color:var(--pri)}.pwbox .eye.on .slash{display:block}

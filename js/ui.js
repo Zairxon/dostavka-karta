@@ -47,6 +47,7 @@ export function formDlg(title, fields, okLabel, extra = '') {
       if (f.type === 'select') return `<label class="fl"><span>${esc(f.label)}</span>${selectHtml(id, f.options, f.value)}</label>`;
       if (f.type === 'area') return `<label class="fl"><span>${esc(f.label)}</span><textarea id="${id}" rows="2">${esc(f.value ?? '')}</textarea></label>`;
       const type = f.type === 'num' ? 'text" inputmode="decimal' : f.type === 'pass' ? 'password' : f.type === 'phone' ? 'tel" inputmode="tel' : 'text';
+      if (f.type === 'pass') return `<label class="fl"><span>${esc(f.label)}</span>${pwBox(`<input id="${id}" type="password" value="${esc(f.value ?? '')}" autocomplete="off">`)}</label>`;
       return `<label class="fl"><span>${esc(f.label)}</span><input id="${id}" type="${type}" value="${esc(f.value ?? '')}" autocomplete="off">${f.type === 'phone' ? `<small class="err" id="${id}_e"></small>` : ''}</label>`;
     }).join('');
     const o = overlay(`<h3>${esc(title)}</h3>${extra}<div class="form">${body}</div><small class="err" id="f_err"></small>
@@ -146,3 +147,14 @@ export function sheet(html, onBind) {
   if (onBind) onBind(o, () => close(o));
   return o;
 }
+
+// Поле пароля с «глазком»: нажатие показывает/скрывает пароль
+export const pwBox = inner => `<span class="pwbox">${inner}<button type="button" class="eye" tabindex="-1" aria-label="👁"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><path class="slash" d="M3 3l18 18"/></svg></button></span>`;
+document.addEventListener('click', e => {
+  const b = e.target.closest('.eye'); if (!b) return;
+  e.preventDefault();
+  const inp = b.parentElement.querySelector('input'); if (!inp) return;
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  b.classList.toggle('on', show);
+});
