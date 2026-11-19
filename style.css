@@ -123,7 +123,7 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 #app.fs .routebox .legend{bottom:calc(38% + 14px)}
 #lst{display:none}#app.fs #lst{display:inline-flex}
 #app.fs.nolist .rlist{display:none}
-#app.fs.nolist .routebox .legend{bottom:14px}
+#app.fs.nolist .routebox .legend{bottom:calc(96px + env(safe-area-inset-bottom))}
 .fchip{position:absolute;left:10px;right:10px;bottom:34px;z-index:520;background:#fff;border-radius:14px;padding:8px 10px 8px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:var(--shadow)}
 .fchip[hidden]{display:none}
 .btn.on{background:var(--pri);color:#fff}
