@@ -136,4 +136,4 @@ input:focus,textarea:focus{border-color:var(--pri2)}
 .locfab:active{background:#e6f2f0}
 .fchip{right:84px}
 #app.fs .routebox .locfab{bottom:calc(38% + 20px)}
-#app.fs.nolist .routebox .locfab{bottom:40px}
+#app.fs.nolist .routebox .locfab{bottom:calc(96px + env(safe-area-inset-bottom))}

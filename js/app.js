@@ -4,7 +4,7 @@ import { $, esc, cap, toast, confirmDlg, infoDlg, formDlg, pickDlg, sheet, selec
 import * as M from './map.js';
 import * as R from './route.js';
 
-export const VERSION = '1.6.0';
+export const VERSION = '1.6.1';
 const root = document.getElementById('app');
 const S = { me: null, d: null, tab: null, view: null, pos: null, busy: false };
 let P = {}, PR = {}, U = {};
